@@ -1,0 +1,55 @@
+pipeline {
+    agent any
+    environment {
+        DESTINATION_SERVER = 'APPJ12'
+        DESTINATION_IP = '10.95.66.105'
+        SSH_PORT = '65520'
+        SSH_CREDENTIALS = cloudadmin
+        SSH_CREDENTIALS_PSW = Npci@123
+        DAYS_TO_KEEP = 4
+    }
+    stages {
+        stage('Copy New Logs from Servers to J12') {
+            steps {
+                script {
+                    def servers = [
+                        [name: 'J01', ip: '10.85.66.162', destPath: '/bm01/javalogs/meta/J01/'],
+                        [name: 'App29', ip: '10.85.66.118', destPath: '/bm01/javalogs/meta/App29/'],
+                        [name: 'App30', ip: '10.85.66.120', destPath: '/bm01/javalogs/meta/App30/'],
+                        [name: 'App31', ip: '10.85.66.119', destPath: '/bm01/javalogs/meta/App31/'],
+                        [name: 'J02', ip: '10.85.66.169', destPath: '/bm01/javalogs/fin/J02/'],
+                        [name: 'J03', ip: '10.85.66.160', destPath: '/bm01/javalogs/fin/J03/'],ht
+                        [name: 'J04', ip: '10.85.66.172', destPath: '/bm01/javalogs/fin/J04/'],
+                        [name: 'J09', ip: '10.85.66.134', destPath: '/bm01/javalogs/fin/J09/'],
+                        [name: 'J05', ip: '10.85.66.163', destPath: '/bm01/javalogs/mandate/J05/'],
+                        [name: 'J06', ip: '10.85.66.167', destPath: '/bm01/javalogs/mandate/J06/']
+                    ]
+
+                    // Loop through each server
+                    servers.each { server ->
+                        def srcPath = "/bm01/javalogs/logs"
+                        def destPath = server.destPath
+
+                        // SSH into J12, check for uncopied files, and copy only new ones
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -p ${SSH_PORT} ${SSH_CREDENTIALS_USR}@${DESTINATION_IP} \\
+                                'echo "${SSH_CREDENTIALS_PSW}" | sudo -S su root -c \\" \\
+                                    find ${srcPath} -type f -name \\"vpas.log.\$(date +%Y-%m-%d)*\\" -mtime -1 -exec \\
+                                    sh -c \\"[ ! -f ${destPath}/\$(basename {}) ] && \\
+                                    scp -o StrictHostKeyChecking=no -P ${SSH_PORT} ${SSH_CREDENTIALS_USR}@${server.ip}:{} ${destPath}\\" \\;
+                                \\" '
+                        """
+
+                        // Retain only the last 4 days of files
+                        sh """
+                            ssh -o StrictHostKeyChecking=no -p ${SSH_PORT} ${SSH_CREDENTIALS_USR}@${DESTINATION_IP} \\
+                                'echo "${SSH_CREDENTIALS_PSW}" | sudo -S su root -c \\" \\
+                                    find ${destPath} -type f -mtime +${DAYS_TO_KEEP} -delete
+                                \\" '
+                        """
+                    }
+                }
+            }
+        }
+    }
+}
